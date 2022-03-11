@@ -9,30 +9,48 @@ output:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library(ggmap)
+library(here)
+library(raster)
+library(sf)
+library(spData)
+library(tidyverse)
 ```
 
-```{r include=FALSE}
+Generally speaking if you are using an RMarkdown file you should put all your libraries that you plan to use in the setup chunk, which is at line 10. I moved what I think you probably need to the chunk. 
+
+Tidyverse is a "meta-package" so it loads a bunch of packages when you call it. The "eval=FALSE" argument in line 24 means that RMarkdown won't run this if you compile it. I'm putting it here to leave your old code. 
+
+```{r include=FALSE, eval=FALSE}
 library(sf)
 library(tidyverse)
 library(here)
 library(raster)
-library(dplyr)
+library(dplyr) # loaded by default with tidyverse so redundant 
 library(spData)
-library(tmap)
-library(leaflet)
-library(ggplot2)
-library(ggmap)
+library(tmap) # For now stick with just one way of doing maps
+library(leaflet) # For now stick with just one way of doing maps
+library(ggplot2) # loaded by default with tidyverse so redundant 
+library(ggmap) 
 ```
 
 # 1) Social Conflict Analysis Database (SCAD) Protest Mapping, Using ggplot2
 
 Goal: Have each point on the map reflect one protest, with different colors if repression was used or not (1: no repression, 2: non-lethal, 3: lethal), make points bigger depending on size. 
+
+
+
 ```{r}
+# For this chunk, you should use the readr package. Since you're loading a csv file, use the read_csv() function. Look up the documentation to find the appropriate arguments. The reason to use readr is that it is *substantially* faster than base-R. 
+# Second, unless you know what you're doing already or the file is massive, keep your raw data separate from processing code. To do this, make a new data frame. The easiest way to do this is to just assign the object you made to a new variable. 
+# Third, look at how to change a variable in dplyr (hint: mutate) and make repress a character variable 
 scad_Raw <- read.csv('/Users/isabellevaldes/Downloads/SCAD2018LatinAmerica_Final.csv', na.strings = '-99')
 scad_Raw$repress <- as.factor(scad_Raw$repress)
+# you don't need line 50
 str(scad_Raw, vec.len=1)
 ```
 
+*Remake this map with a shapefile* 
 
 At first, I did not understand how to create a simple features object. I referenced some videos online to do an alternative method. 
 ```{r echo = T, results = 'hide'}
@@ -56,12 +74,15 @@ Repression scale:
 
 ```{r}
 ggmap(central_america) +
+  # You call size twice. The second size overwrite the first 
   geom_point(data = subset(scad_Raw, styr > 2010), 
              aes(x=longitude , y=latitude, size=npart, color=repress),
              size = .6) + 
   ggtitle('Protests in Central America since 2010') + 
-  labs(color = 'Level of Repression', size='Number') + 
+  labs(color = 'Level of Repression', size='Number') + # unless you have a strong reason, scale_colour_viridis_d with appropriate defaults is your best default
   scale_color_manual(labels = c('No repression used', 'Non-lethal repression used', 'Lethal repression'), values = c('blue', 'orange', 'red1')) + 
+  # theme_void() might be simpler
+  # consult the different basic themes available at the ggplot2 website
   theme(axis.title.x = element_blank(), 
         axis.title.y = element_blank(),
         axis.ticks.x = element_blank(),
@@ -79,20 +100,27 @@ One issue with this map is that the graphic does not include state borders for M
 
 a) I used the ACLED data to visualize protests in Colombia, Chile, and Mexico, this time using simple features. 
 ```{r}
+## Same code comments as above 
 acledRaw <- read.csv('/Users/isabellevaldes/Downloads/2010-01-01-2022-03-10-Central_America-South_America.csv', sep = ';')
 acledCol <- subset(acledRaw, year <= 2020 & year>= 2010 & country == 'Colombia' & event_type == 'Protests')
 head(acledCol)
 ```
 
 ```{r}
+## Certainly a way to do this. Not actually necessary unless you want it as a note to yourself
 print(paste('There are', nrow(acledCol), 'entries in the ACLED database regarding Colombian protests between 2010 and 2020.'))
 ```
 
 ```{r}
 #create simple features object of Colombia
 #https://rpubs.com/ials2un/leaflet_thin
-colombia <- here('/Users/isabellevaldes/Downloads/data/COL_adm1.shp') %>% st_read()
-attributes(colombia)
+# You are using the here package incorrecly. 
+# here() allows you to do stuff relative to a directory 
+#colombia <- here('/Users/isabellevaldes/Downloads/data/COL_adm1.shp') %>% st_read()
+#attributes(colombia)
+
+# Here's the alternative way since this is now an .Rproj. Look up Rprojects for more information 
+colombia <- st_read(here("Data/"))
 ```
 
 ```{r}
@@ -133,6 +161,8 @@ col_16map
 
 ```{r}
 #interaction code 17 is when actors involved are civilians and state forces. 
+
+## Note the difference between what you wrote here and how you were subsetting above. Pick one and stick with it. I recommend picking this way.
 col_17 <- acledRaw %>% filter(year <= 2020 & year>= 2010 & country == 'Colombia' & (interaction == 17)) 
 col_17 %>% distinct(sub_event_type)
 ```
@@ -183,12 +213,15 @@ Finally, I wanted to use simple features for this dataset on conflicts in Chile 
 
 While I could view the .RData file immediately in R, I was unable to load it properly. 
 ```{r eval=F}
-load('acciones_de_protesta_2009_2019,RData')
+## This loads for me just fine. The eval = F flag is set so you might want to change that to eval = T
+load(file = "Data/Protest_Events_Dataset_2009_2019_v.01.RData")
 chileRaw <- acciones_de_protesta_2009_2019
 print(paste('There are', nrow(chileRaw), 'rows in this dataset'))
 ```
 
 Regarding mapping this data, this immediately became a more challenging task, because no latitudinal/longitudinal information is provided. The closest we are given is variable 'p8', which is the "codigo de comuna," the city level code of where an event occurred. I can attempt this next time. My thought process is that I would find the shapefile for each city in Chile, but this does not seem feasible. The next best option would be to use the state codes instead, find the shapefile for each, and color in each state darker or lighter depending on the number of conflicts that occurred there. 
+
+*The way you go about this is that if it's by city you get the lat/lon of each city and join them with this data. There are multiple ways to do this. I would start by googling "map apis Rstats" and see what pops up. Where cities are located are features of the overall shape file. Now if you wanted to break each of these into a city then yes you would want a city shapefile and then similarly figure out a way to geocode in a similar way but one level down.*
 
 ### Notes
 
