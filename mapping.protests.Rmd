@@ -1,0 +1,195 @@
+---
+title: "Protest Visualizations"
+author: "Isabelle V"
+date: "3/10/2022"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r include=FALSE}
+library(sf)
+library(tidyverse)
+library(here)
+library(raster)
+library(dplyr)
+library(spData)
+library(tmap)
+library(leaflet)
+library(ggplot2)
+library(ggmap)
+```
+
+# 1) Social Conflict Analysis Database (SCAD) Protest Mapping, Using ggplot2
+
+Goal: Have each point on the map reflect one protest, with different colors if repression was used or not (1: no repression, 2: non-lethal, 3: lethal), make points bigger depending on size. 
+```{r}
+scad_Raw <- read.csv('/Users/isabellevaldes/Downloads/SCAD2018LatinAmerica_Final.csv', na.strings = '-99')
+scad_Raw$repress <- as.factor(scad_Raw$repress)
+str(scad_Raw, vec.len=1)
+```
+
+
+At first, I did not understand how to create a simple features object. I referenced some videos online to do an alternative method. 
+```{r echo = T, results = 'hide'}
+#Save map of Central America
+central_america <- get_stamenmap(
+  bbox = c(left= -120.059, bottom=7.580 , right=-72.158, top=33.211),
+  maptype = 'terrain',
+  zoom = 4
+)
+```
+
+## 1.a) Map of Protests Met with Repression in Central America after 2010
+
+**Question: How do I make the size larger for the points, so that it varies by protest size? doing size = npart does not work**
+
+Repression scale:
+
++ 0: no repression used
++ 1: non-lethal repression used (e.g. tear gas, arrests, etc)
++ 2: lethal repression used (deaths reported)
+
+```{r}
+ggmap(central_america) +
+  geom_point(data = subset(scad_Raw, styr > 2010), 
+             aes(x=longitude , y=latitude, size=npart, color=repress),
+             size = .6) + 
+  ggtitle('Protests in Central America since 2010') + 
+  labs(color = 'Level of Repression', size='Number') + 
+  scale_color_manual(labels = c('No repression used', 'Non-lethal repression used', 'Lethal repression'), values = c('blue', 'orange', 'red1')) + 
+  theme(axis.title.x = element_blank(), 
+        axis.title.y = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.text.x = element_blank(),
+        axis.text.y = element_blank())
+```
+
+One issue with this map is that the graphic does not include state borders for Mexico. It additionally looks rather messy due to the blurring of countries in the periphery. I decided to next attempt to make maps using the method as defined here: https://geocompr.robinlovelace.net/adv-map.html#color-settings
+
+
+# 2) ACLED Protest Data, Using Simple Features 
+
+## 2a) Colombia: Mapping protests between 2010 and 2020
+
+a) I used the ACLED data to visualize protests in Colombia, Chile, and Mexico, this time using simple features. 
+```{r}
+acledRaw <- read.csv('/Users/isabellevaldes/Downloads/2010-01-01-2022-03-10-Central_America-South_America.csv', sep = ';')
+acledCol <- subset(acledRaw, year <= 2020 & year>= 2010 & country == 'Colombia' & event_type == 'Protests')
+head(acledCol)
+```
+
+```{r}
+print(paste('There are', nrow(acledCol), 'entries in the ACLED database regarding Colombian protests between 2010 and 2020.'))
+```
+
+```{r}
+#create simple features object of Colombia
+#https://rpubs.com/ials2un/leaflet_thin
+colombia <- here('/Users/isabellevaldes/Downloads/data/COL_adm1.shp') %>% st_read()
+attributes(colombia)
+```
+
+```{r}
+#make matrix of coordinates for protest data
+m <- st_as_sf(acledCol, coords = c('longitude', 'latitude'))
+#get matrix of coordinates
+coords <- st_coordinates(m)
+```
+
+```{r}
+#create map of colombia
+map_col <- tm_shape(colombia) + tm_polygons()
+#create map of protests
+map_col + tm_shape(m['sub_event_type']) + tm_dots(col = 'sub_event_type', palette = c('red3', 'blue', 'orange'))
+```
+
+## 2b) Colombia: Mapping protests that involved interactions with state forces
+
+```{r}
+#interaction code 16 is when the actors involved are state forces and protestors. 
+col_16 <- acledRaw %>% filter(year <= 2020 & year>= 2010 & country == 'Colombia' & interaction == 16)
+```
+
+```{r}
+#make matrix of coordinates for protest data
+m2 <- st_as_sf(col_16, coords = c('longitude', 'latitude'))
+#get matrix of coordinates
+coords <- st_coordinates(m2)
+```
+
+```{r}
+#map
+col_16map <- map_col + tm_shape(m2['sub_event_type']) + tm_dots(col = 'sub_event_type', palette = c('red3', 'orange'))
+col_16map 
+```
+
+## 2c) Colombia: Conflicts between state forces and civilians
+
+```{r}
+#interaction code 17 is when actors involved are civilians and state forces. 
+col_17 <- acledRaw %>% filter(year <= 2020 & year>= 2010 & country == 'Colombia' & (interaction == 17)) 
+col_17 %>% distinct(sub_event_type)
+```
+
+```{r}
+#make matrix of coordinates for protest data
+m3 <- st_as_sf(col_17, coords = c('longitude', 'latitude'))
+#get matrix of coordinates
+coords <- st_coordinates(m3)
+```
+
+```{r}
+#map
+col_17map <- map_col + tm_shape(m3['sub_event_type']) + tm_dots(col = 'sub_event_type', palette = c('red3', 'orange'))
+col_17map 
+```
+
+
+# 3) Trying to Map SCAD Data Again, Using Simple Features
+
+```{r}
+mexico_data <- scad_Raw %>% filter(countryname == 'Mexico' & styr > 2014)
+```
+
+```{r}
+#create simple features object of Mexico 
+mexico <- here('/Users/isabellevaldes/Downloads/mex_admbnda_govmex_20210618_SHP/mex_admbnda_adm1_govmex_20210618.shp') %>% st_read()
+attributes(mexico)
+```
+
+```{r}
+#make matrix of coordinates for protest data
+m <- st_as_sf(mexico_data, coords = c('longitude', 'latitude'))
+#get matrix of coordinates
+coords <- st_coordinates(m)
+```
+
+```{r}
+#create map of mexico
+map_mex <- tm_shape(mexico) + tm_polygons()
+protest_mex <- map_mex + tm_shape(m['repress']) + tm_dots(col = 'repress', palette = c('blue', 'orange', 'red1'))
+protest_mex
+```
+
+# 4) Observatory of Conflicts in Chile dataset 
+
+Finally, I wanted to use simple features for this dataset on conflicts in Chile between 2009 and 2019. 
+
+While I could view the .RData file immediately in R, I was unable to load it properly. 
+```{r eval=F}
+load('acciones_de_protesta_2009_2019,RData')
+chileRaw <- acciones_de_protesta_2009_2019
+print(paste('There are', nrow(chileRaw), 'rows in this dataset'))
+```
+
+Regarding mapping this data, this immediately became a more challenging task, because no latitudinal/longitudinal information is provided. The closest we are given is variable 'p8', which is the "codigo de comuna," the city level code of where an event occurred. I can attempt this next time. My thought process is that I would find the shapefile for each city in Chile, but this does not seem feasible. The next best option would be to use the state codes instead, find the shapefile for each, and color in each state darker or lighter depending on the number of conflicts that occurred there. 
+
+### Notes
+
+This took longer than expected! Correcting errors and assessing warnings took longer than I thought. I also did not know about shapefiles, and that they are easy to obtain for country- and state-level mapping. I would still like to improve these maps, however. I tried various methods to make points increase relative to the number of participants, but I was unsuccessful. I would also like to modify the legends if possible. 
